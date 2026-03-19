@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Futures Tax Tree</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, system-ui, sans-serif; background: #0a0a0a; color: #e0e0e0; display: flex; justify-content: center; margin: 0; padding: 20px 0; }
+  #chart svg { display: block; max-width: 100%; height: auto; }
+</style>
+</head>
+<body>
+<div id="chart"></div>
+<script>
+const W = 800, H = 1000;
+const nodeW = 140, nodeH = 72;
+
+const data = {
+  n: "Futures Contract",
+  d1: "Regulated?",
+  irc: ["§1256(g)(1)", "https://www.law.cornell.edu/definitions/uscode.php?width=840&height=800&iframe=true&def_id=26-USC-1613016357-1978934938&term_occur=999&term_src="],
+  c: "#555",
+  kids: [
+    {
+      n: "Section 1256",
+      d1: "60/40 LT/ST",
+      d2: "Year-end MTM",
+      irc: ["§1256", "https://www.law.cornell.edu/uscode/text/26/1256"],
+      c: "#4caf50",
+      kids: [
+        { n: "SMA", d1: "Own contracts directly", d2: "Full 1256 ✓", links: [["1099-B", "https://www.irs.gov/forms-pubs/about-form-1099-b"], ["Form 6781", "https://www.irs.gov/forms-pubs/about-form-6781"]], c: "#4caf50" },
+        { n: "LP / Hedge Fund", d1: "Pass-through entity", d2: "Full 1256 ✓ · K-1", irc: ["§701", "https://www.law.cornell.edu/uscode/text/26/701"], c: "#4caf50" },
+        {
+          n: "'40 Act Fund",
+          d1: "ETF, MF, CEF",
+          irc: ["15 USC §80a-8", "https://www.law.cornell.edu/uscode/text/15/80a-8"],
+          c: "#ff9800",
+          kids: [
+            { n: "'40 Act LP", d1: "Pass-through · K-1", d2: "Full 1256 ✓", irc: ["§701", "https://www.law.cornell.edu/uscode/text/26/701"], c: "#4caf50" },
+            {
+              n: "'40 Act RIC",
+              d1: "90% qualifying",
+              d2: "income test",
+              irc: ["§851(b)(2)", "https://www.law.cornell.edu/uscode/text/26/851#b_2"],
+              c: "#ff9800",
+              kids: [
+                { n: "Financial Futures", d1: "Full 1256 ✓", d2: "S&P, Nasdaq, Bonds, FX*", c: "#4caf50" },
+                {
+                  n: "Commodity Futures",
+                  d1: "NOT qualifying ✗",
+                  d2: "Ordinary income",
+                  d3: "Oil, Gold, Wheat, Gas",
+                  c: "#ef5350",
+                  kids: [
+                    { n: "Cayman Blocker", d1: "→ qualifying income", d2: "1256 may not pass thru", irc: ["Rev. Rul. 2006-1", "https://www.irs.gov/irb/2006-25_IRB"], c: "#ff9800", tickers: [["DBMF","https://imgpfunds.com/im-dbi-managed-futures-strategy-etf/"],["KMLM","https://kraneshares.com/etf/kmlm/"],["CTA","https://www.simplify.us/etfs/cta-simplify-managed-futures-strategy-etf"],["AQMIX","https://funds.aqr.com/funds/alternatives/aqr-managed-futures-strategy-fund/aqmix"],["ASMF","https://www.virtus.com/products/virtus-alphasimplex-managed-futures-etf"],["PQTIX","https://www.pimco.com/us/en/investments/mutual-fund/pimco-trends-managed-futures-strategy-fund/inst-usd"]] },
+                    { n: "Swap (NPC)", d1: "NOT 1256 contracts", d2: "Ordinary income", irc: ["Reg. §1.446-3", "https://www.law.cornell.edu/cfr/text/26/1.446-3"], c: "#ef5350", tickers: [["PQTIX","https://www.pimco.com/us/en/investments/mutual-fund/pimco-trends-managed-futures-strategy-fund/inst-usd"],["WTMF","https://www.wisdomtree.com/investments/etfs/alternative/wtmf"]] },
+                  ]
+                },
+              ]
+            },
+          ]
+        },
+      ]
+    },
+    { n: "Not 1256", d1: "Normal cap gains", d2: "e.g. single stock futures", irc: ["§1222", "https://www.law.cornell.edu/uscode/text/26/1222"], c: "#555" },
+  ]
+};
+
+// Convert to d3 hierarchy
+function convert(d) {
+  const node = { data: d, children: d.kids ? d.kids.map(convert) : undefined };
+  return node;
+}
+const root = d3.hierarchy(convert(data), d => d.children);
+
+const tree = d3.tree()
+  .nodeSize([nodeW + 12, nodeH + 40])
+  .separation((a, b) => a.parent === b.parent ? 1 : 1.1);
+tree(root);
+
+// Bounds
+let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+root.each(d => {
+  x0 = Math.min(x0, d.x); x1 = Math.max(x1, d.x);
+  y0 = Math.min(y0, d.y); y1 = Math.max(y1, d.y);
+});
+
+const natW = (x1 - x0) + nodeW + 40;
+const natH = (y1 - y0) + nodeH + 80;
+const scale = Math.min((W - 40) / natW, (H - 80) / natH, 1);
+
+const svg = d3.select("#chart").append("svg")
+  .attr("viewBox", `0 0 ${W} ${H}`)
+  .attr("width", W).attr("height", H);
+
+svg.append("rect").attr("width", W).attr("height", H).attr("fill", "#0a0a0a");
+
+// Title
+svg.append("text").attr("x", W/2).attr("y", 26).attr("text-anchor", "middle")
+  .attr("fill", "#e0e0e0").attr("font-size", "17px").attr("font-weight", "600")
+  .attr("font-family", "-apple-system, system-ui, sans-serif")
+  .text("Futures Taxation by Wrapper");
+
+// Footnote
+svg.append("text").attr("x", W/2).attr("y", H - 10).attr("text-anchor", "middle")
+  .attr("fill", "#555").attr("font-size", "10px")
+  .attr("font-family", "-apple-system, system-ui, sans-serif")
+  .text("Single-position — straddle rules (§1092) apply to offsetting positions");
+
+svg.append("text").attr("x", W/2).attr("y", H - 24).attr("text-anchor", "middle")
+  .attr("fill", "#555").attr("font-size", "10px")
+  .attr("font-family", "-apple-system, system-ui, sans-serif")
+  .text("*FX futures on exchanges are §1256. OTC forex may fall under §988 (ordinary income).");
+
+const cx = W / 2 - ((x0 + x1) / 2) * scale;
+const cy = 50;
+const g = svg.append("g").attr("transform", `translate(${cx},${cy}) scale(${scale})`);
+
+// Links: elbow from bottom-center of parent to top-center of child
+g.selectAll("path.link")
+  .data(root.links())
+  .join("path")
+  .attr("class", "link")
+  .attr("stroke", d => d.target.data.data.c || "#333")
+  .attr("fill", "none")
+  .attr("stroke-width", 1)
+  .attr("d", d => {
+    const sy = d.source.y + nodeH;
+    const ty = d.target.y;
+    const my = sy + (ty - sy) / 2;
+    return `M${d.source.x},${sy} V${my} H${d.target.x} V${ty}`;
+  });
+
+// Nodes
+const nodes = g.selectAll("g.node")
+  .data(root.descendants())
+  .join("g")
+  .attr("class", "node")
+  .attr("transform", d => `translate(${d.x - nodeW/2},${d.y})`);
+
+// Clip
+const defs = svg.append("defs");
+nodes.each(function(d, i) {
+  defs.append("clipPath").attr("id", "c" + i)
+    .append("rect").attr("width", nodeW - 6).attr("height", nodeH - 2).attr("x", 3).attr("y", 1).attr("rx", 5);
+});
+
+// Box
+nodes.append("rect")
+  .attr("width", nodeW).attr("height", nodeH).attr("rx", 5).attr("ry", 5)
+  .attr("fill", "#111")
+  .attr("stroke", d => d.data.data.c || "#333")
+  .attr("stroke-width", 1.5);
+
+// Text
+const tg = nodes.append("g").attr("clip-path", (d, i) => `url(#c${i})`);
+
+const ff = "-apple-system, system-ui, sans-serif";
+
+// Name
+tg.append("text").attr("x", nodeW/2).attr("y", 17).attr("text-anchor", "middle")
+  .attr("font-family", ff).attr("font-size", "12px").attr("font-weight", "bold")
+  .attr("fill", d => d.data.data.c === "#555" ? "#777" : "#e0e0e0")
+  .text(d => d.data.data.n);
+
+// d1
+tg.filter(d => d.data.data.d1).append("text")
+  .attr("x", nodeW/2).attr("y", 32).attr("text-anchor", "middle")
+  .attr("font-family", ff).attr("font-size", "10px").attr("fill", "#888")
+  .text(d => d.data.data.d1);
+
+// d2
+tg.filter(d => d.data.data.d2).append("text")
+  .attr("x", nodeW/2).attr("y", 44).attr("text-anchor", "middle")
+  .attr("font-family", ff).attr("font-size", "10px").attr("fill", "#888")
+  .text(d => d.data.data.d2);
+
+// d3
+tg.filter(d => d.data.data.d3).append("text")
+  .attr("x", nodeW/2).attr("y", 56).attr("text-anchor", "middle")
+  .attr("font-family", ff).attr("font-size", "10px").attr("fill", "#888")
+  .text(d => d.data.data.d3);
+
+// IRC
+tg.filter(d => d.data.data.irc).append("a")
+  .attr("href", d => d.data.data.irc[1]).attr("target", "_blank")
+  .append("text")
+  .attr("x", nodeW/2).attr("text-anchor", "middle")
+  .attr("font-family", ff).attr("font-size", "9px").attr("fill", "#666")
+  .attr("font-style", "italic").attr("text-decoration", "underline").attr("cursor", "pointer")
+  .attr("y", d => {
+    let y = 32;
+    if (d.data.data.d1) y += 12;
+    if (d.data.data.d2) y += 12;
+    if (d.data.data.d3) y += 12;
+    return Math.min(y, nodeH - 4);
+  })
+  .text(d => d.data.data.irc[0]);
+
+// Multi-links (e.g. SMA with two form links)
+nodes.filter(d => d.data.data.links).each(function(d) {
+  const g = d3.select(this).select("g");
+  let baseY = 32;
+  if (d.data.data.d1) baseY += 12;
+  if (d.data.data.d2) baseY += 12;
+  if (d.data.data.d3) baseY += 12;
+  baseY = Math.min(baseY, nodeH - 4);
+  const links = d.data.data.links;
+  const totalW = links.reduce((s, l) => s + l[0].length * 5.5, 0) + (links.length - 1) * 12;
+  let xOff = nodeW / 2 - totalW / 2;
+  links.forEach((l, i) => {
+    const a = g.append("a").attr("href", l[1]).attr("target", "_blank");
+    a.append("text")
+      .attr("x", xOff + l[0].length * 2.75)
+      .attr("y", baseY)
+      .attr("text-anchor", "middle")
+      .attr("font-family", ff).attr("font-size", "9px").attr("fill", "#666")
+      .attr("font-style", "italic").attr("text-decoration", "underline").attr("cursor", "pointer")
+      .text(l[0]);
+    xOff += l[0].length * 5.5 + 12;
+  });
+});
+
+// Tickers — tiny clickable links, bottom of box
+nodes.filter(d => d.data.data.tickers).each(function(d) {
+  const g = d3.select(this).select("g");
+  const tickers = d.data.data.tickers;
+  const gap = 4;
+  const charW = 4.5;
+  const totalW = tickers.reduce((s, t) => s + t[0].length * charW, 0) + (tickers.length - 1) * gap;
+  let xOff = nodeW / 2 - totalW / 2;
+  tickers.forEach(t => {
+    const a = g.append("a").attr("href", t[1]).attr("target", "_blank");
+    a.append("text")
+      .attr("x", xOff + t[0].length * charW / 2)
+      .attr("y", nodeH - 3)
+      .attr("text-anchor", "middle")
+      .attr("font-family", "monospace").attr("font-size", "7px")
+      .attr("fill", "#666").attr("text-decoration", "underline").attr("cursor", "pointer")
+      .text(t[0]);
+    xOff += t[0].length * charW + gap;
+  });
+});
+</script>
+</body>
+</html>
